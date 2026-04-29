@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+
+# Node / Vite
+node_modules/
+dist/
+.vite/
+
+# Variabili d'ambiente e segreti
+.env
+.env.*
+!.env.example
+
+# IDE / editor
+.vscode/
+.idea/
+.claude/
+*.swp
+*.swo
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
+
+# Archivi del progetto
+*.rar
+*.zip
+
+# Log
+*.log

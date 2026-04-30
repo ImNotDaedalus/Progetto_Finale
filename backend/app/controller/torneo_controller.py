@@ -1,3 +1,11 @@
+# =============================================================================
+# CONTROLLER TORNEO - rispondiamo alle richieste web sui tornei.
+#
+# Le rotte di lettura (GET) sono pubbliche; quelle di scrittura (POST, PUT,
+# DELETE) sono protette: serve essere loggati e, per modifica/cancellazione,
+# essere il proprietario del torneo.
+# =============================================================================
+
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
 
@@ -9,10 +17,12 @@ from app.utils.exceptions import DBException
 
 torneo_controller = Blueprint("torneo", __name__)
 torneo_service = TorneoService()
+# Ci serve anche il service degli account per trovare l'utente loggato.
 account_service = AccountService()
 
 
 def build_torneo_from_payload(data: dict, id_proprietario, torneo_id=None) -> Torneo:
+    """Costruisce un oggetto Torneo dai dati ricevuti."""
     return Torneo(
         id=torneo_id,
         nome=data.get("nome"),
@@ -25,6 +35,7 @@ def build_torneo_from_payload(data: dict, id_proprietario, torneo_id=None) -> To
 
 
 def validate_torneo_payload(data: dict):
+    """Controlla che siano presenti tutti i campi obbligatori."""
     required_fields = (
         "nome",
         "data_inizio",
@@ -44,11 +55,13 @@ def validate_torneo_payload(data: dict):
 
 
 def _current_account_id():
-    """Restituisce l'id dell'account corrispondente al JWT corrente."""
-    email = get_jwt_identity()
+    """Restituisce l'id dell'account corrispondente al token JWT corrente.
+    In pratica: "chi sta facendo questa richiesta?"."""
+    email = get_jwt_identity()  # legge l'email dal token JWT
     if email is None:
         return None
     accounts = account_service.get_accounts()
+    # Cerca tra gli account quello con la stessa email.
     for account in accounts:
         if account.email == email:
             return account.id
@@ -57,12 +70,14 @@ def _current_account_id():
 
 @torneo_controller.route("/")
 def get_tornei():
+    """GET /torneo/ - elenco di tutti i tornei (pubblico)."""
     tornei = torneo_service.get_tornei()
     return jsonify([torneo.to_dict() for torneo in tornei])
 
 
 @torneo_controller.route("/<int:id>")
 def get_torneo(id):
+    """GET /torneo/<id> - dettaglio di un torneo (pubblico)."""
     torneo = torneo_service.get_torneo_by_id(id)
     if torneo is None:
         return jsonify({"error": "Torneo non trovato"}), 404
@@ -70,8 +85,10 @@ def get_torneo(id):
 
 
 @torneo_controller.route("/", methods=["POST"])
-@jwt_required()
+@jwt_required()  # bisogna essere loggati per creare un torneo
 def new_torneo():
+    """POST /torneo/ - crea un nuovo torneo. Il proprietario diventa
+    automaticamente l'utente loggato."""
     data = request.json
     if not data:
         return jsonify({"error": "Dati mancanti"}), 400
@@ -80,6 +97,7 @@ def new_torneo():
     if validation_error is not None:
         return validation_error
 
+    # Trova l'id dell'utente loggato (sarà il proprietario del torneo).
     id_proprietario = _current_account_id()
     if id_proprietario is None:
         return jsonify({"error": "Account non trovato"}), 401
@@ -96,6 +114,7 @@ def new_torneo():
 @torneo_controller.route("/<int:id>", methods=["PUT"])
 @jwt_required()
 def update_torneo(id):
+    """PUT /torneo/<id> - modifica un torneo. Solo il proprietario può farlo."""
     data = request.json
     if not data:
         return jsonify({"error": "Dati mancanti"}), 400
@@ -108,9 +127,11 @@ def update_torneo(id):
     if existing is None:
         return jsonify({"error": "Torneo non trovato"}), 404
 
+    # Sicurezza: chi sta modificando deve essere il proprietario del torneo.
     if existing.id_proprietario != _current_account_id():
         return jsonify({"error": "Solo il proprietario puo modificare il torneo"}), 403
 
+    # Manteniamo lo stesso proprietario (non si può cambiare).
     torneo = build_torneo_from_payload(
         data,
         id_proprietario=existing.id_proprietario,
@@ -129,6 +150,7 @@ def update_torneo(id):
 @torneo_controller.route("/<int:id>", methods=["DELETE"])
 @jwt_required()
 def delete_torneo(id):
+    """DELETE /torneo/<id> - elimina un torneo. Solo il proprietario può farlo."""
     existing = torneo_service.get_torneo_by_id(id)
     if existing is None:
         return jsonify({"error": "Torneo non trovato"}), 404

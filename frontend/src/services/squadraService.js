@@ -1,31 +1,25 @@
-// Funzioni per parlare con il backend riguardo alle squadre.
+// =============================================================================
+// squadraService.js - funzioni per parlare col backend riguardo alle squadre.
+// =============================================================================
+
 import { apiRequest } from './httpClient'
 
-const squadraRoot = '/squadra'
+const root = '/squadra'
 
 export const squadraService = {
   // Elenco di tutte le squadre.
-  getSquadre() {
-    return apiRequest(`${squadraRoot}/`)
-  },
+  getSquadre: () => apiRequest(`${root}/`),
 
-  // Dettaglio di una squadra tramite id.
-  getSquadraById(id) {
-    return apiRequest(`${squadraRoot}/${id}`)
-  },
+  // Dettaglio di una squadra dato il suo id.
+  getSquadraById: (id) => apiRequest(`${root}/${id}`),
 
   // Crea una nuova squadra.
-  createSquadra(payload) {
-    return apiRequest(`${squadraRoot}/`, { method: 'POST', body: payload })
-  },
+  createSquadra: (payload) => apiRequest(`${root}/`, { method: 'POST', body: payload }),
 
   // Aggiorna i dati di una squadra.
-  updateSquadra(id, payload) {
-    return apiRequest(`${squadraRoot}/${id}`, { method: 'PUT', body: payload })
-  },
+  updateSquadra: (id, payload) =>
+    apiRequest(`${root}/${id}`, { method: 'PUT', body: payload }),
 
   // Cancella una squadra.
-  deleteSquadra(id) {
-    return apiRequest(`${squadraRoot}/${id}`, { method: 'DELETE' })
-  },
+  deleteSquadra: (id) => apiRequest(`${root}/${id}`, { method: 'DELETE' }),
 }

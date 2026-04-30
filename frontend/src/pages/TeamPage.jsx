@@ -1,8 +1,14 @@
-// Pagina /squadra/:id: dettaglio della squadra.
-// - intestazione con nome e proprietario
-// - giocatori
-// - se sei il proprietario: pulsante "Invita giocatore" e "Iscrivi al torneo"
-// - statistiche e storico risultati
+// =============================================================================
+// TeamPage.jsx - pagina /squadra/:id: dettaglio di una singola squadra.
+//
+// Mostra:
+//   - intestazione con nome squadra, allenatore (proprietario), numero giocatori
+//   - statistiche (vittorie / pareggi / sconfitte)
+//   - "roster" (elenco giocatori)
+//   - storico partite e iscrizioni a tornei
+//   - se sei il proprietario: pulsanti per invitare un giocatore o iscrivere
+//     la squadra a un torneo (entrambi aprono dialoghi modali)
+// =============================================================================
 
 import EmojiEventsRoundedIcon from '@mui/icons-material/EmojiEventsRounded'
 import Groups2RoundedIcon from '@mui/icons-material/Groups2Rounded'
@@ -39,21 +45,24 @@ import { calcolaStatistiche, resultService } from '../services/resultService'
 import { squadraService } from '../services/squadraService'
 import { torneoService } from '../services/torneoService'
 
+// Stile delle "etichette" mostrate sopra al gradiente blu (sfondo trasparente bianco).
+const overlayChipSx = { bgcolor: 'rgba(255,255,255,0.18)', color: '#fff' }
+
+// Mappe di traduzione per gli stati di richiesta/invito (es. "accepted" -> "Accettata").
+const STATO_LABEL = { accepted: 'Accettata', rejected: 'Rifiutata', pending: 'In attesa' }
+const INVITO_LABEL = { accepted: 'Accettato', rejected: 'Rifiutato', pending: 'In attesa' }
+// Colore del Chip in base allo stato (success = verde, error = rosso, ecc.).
+const statoColor = (stato) =>
+  stato === 'accepted' ? 'success' : stato === 'rejected' ? 'error' : 'default'
+
+/** Statistica singola dentro un riquadro: etichetta + numero grosso. */
 function StatBox({ color = '#1976d2', label, value }) {
   return (
     <Paper
-      sx={{
-        flex: 1,
-        minWidth: 100,
-        p: 2,
-        textAlign: 'center',
-        borderTop: `3px solid ${color}`,
-      }}
+      sx={{ flex: 1, minWidth: 100, p: 2, textAlign: 'center', borderTop: `3px solid ${color}` }}
       variant="outlined"
     >
-      <Typography color="text.secondary" variant="caption">
-        {label}
-      </Typography>
+      <Typography color="text.secondary" variant="caption">{label}</Typography>
       <Typography variant="h5">{value}</Typography>
     </Paper>
   )
@@ -61,23 +70,26 @@ function StatBox({ color = '#1976d2', label, value }) {
 
 export default function TeamPage() {
   const { id } = useParams()
-  const idSquadra = Number(id)
+  const idSquadra = Number(id)              // l'id arriva come stringa: lo trasformiamo in numero
   const { currentAccount, isAuthenticated, token } = useAuth()
 
+  // Stato della pagina.
   const [squadra, setSquadra] = useState(null)
   const [accounts, setAccounts] = useState([])
   const [tornei, setTornei] = useState([])
-  const [richieste, setRichieste] = useState([])
-  const [risultati, setRisultati] = useState([])
-  const [inviti, setInviti] = useState([])
+  const [richieste, setRichieste] = useState([])     // richieste della squadra ai tornei
+  const [risultati, setRisultati] = useState([])     // partite giocate
+  const [inviti, setInviti] = useState([])           // inviti spediti dalla squadra
   const [error, setError] = useState('')
   const [feedback, setFeedback] = useState(null)
 
+  // Stati dei due dialoghi modali (invito giocatore / iscrizione torneo).
   const [inviteOpen, setInviteOpen] = useState(false)
   const [invitedAccountId, setInvitedAccountId] = useState('')
   const [requestOpen, setRequestOpen] = useState(false)
   const [requestTorneoId, setRequestTorneoId] = useState('')
 
+  // Funzione che (ri)carica tutti i dati necessari alla pagina.
   async function reload() {
     try {
       const sq = await squadraService.getSquadraById(idSquadra)
@@ -98,26 +110,28 @@ export default function TeamPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idSquadra, token, isAuthenticated])
 
+  // Sei il proprietario di questa squadra? Da questo dipendono molti pulsanti.
   const isOwner = useMemo(
-    () => squadra && currentAccount && squadra.id_proprietario === currentAccount.id,
+    () => Boolean(squadra && currentAccount && squadra.id_proprietario === currentAccount.id),
     [squadra, currentAccount],
   )
-
+  // Lista dei giocatori che hanno id_squadra = idSquadra.
   const giocatori = useMemo(
     () => accounts.filter((acc) => acc.id_squadra === idSquadra),
     [accounts, idSquadra],
   )
-
+  // Statistiche della squadra (vittorie / pareggi / sconfitte).
   const statistiche = useMemo(
     () => calcolaStatistiche(risultati, idSquadra),
     [risultati, idSquadra],
   )
-
+  // Account del proprietario (per mostrarlo come "Allenatore").
   const proprietario = useMemo(
     () => accounts.find((acc) => acc.id === squadra?.id_proprietario),
     [accounts, squadra],
   )
 
+  // Gestisce l'invio dell'invito a un giocatore.
   function handleInvite(event) {
     event.preventDefault()
     setFeedback(null)
@@ -129,15 +143,14 @@ export default function TeamPage() {
       setFeedback({ severity: 'error', message: 'Account non trovato.' })
       return
     }
+    // Se il giocatore è già in una squadra, niente invito.
     if (target.id_squadra) {
-      setFeedback({
-        severity: 'warning',
-        message: 'Questo giocatore e gia in una squadra.',
-      })
+      setFeedback({ severity: 'warning', message: 'Questo giocatore e gia in una squadra.' })
       return
     }
+    // Evita inviti doppi se ce n'è già uno in attesa.
     const giaInvitato = inviti.some(
-      (invito) => invito.id_account === idTarget && invito.stato === 'pending',
+      (i) => i.id_account === idTarget && i.stato === 'pending',
     )
     if (giaInvitato) {
       setFeedback({ severity: 'info', message: 'Hai gia un invito in attesa per questo giocatore.' })
@@ -150,14 +163,14 @@ export default function TeamPage() {
     setFeedback({ severity: 'success', message: 'Invito inviato.' })
   }
 
+  // Gestisce la richiesta di iscrizione a un torneo.
   function handleRequestTorneo(event) {
     event.preventDefault()
     setFeedback(null)
     const idTorneo = Number(requestTorneoId)
     if (!idTorneo) return
-    const giaInviata = richieste.some(
-      (r) => r.id_torneo === idTorneo && r.stato === 'pending',
-    )
+    // Evita richieste doppie.
+    const giaInviata = richieste.some((r) => r.id_torneo === idTorneo && r.stato === 'pending')
     if (giaInviata) {
       setFeedback({ severity: 'info', message: 'Hai gia richiesto questo torneo.' })
       return
@@ -169,6 +182,7 @@ export default function TeamPage() {
     setFeedback({ severity: 'success', message: 'Richiesta inviata al torneo.' })
   }
 
+  // Casi di errore / caricamento / non loggato.
   if (!isAuthenticated) {
     return (
       <Card variant="outlined">
@@ -185,17 +199,18 @@ export default function TeamPage() {
   if (error) return <Alert severity="error">{error}</Alert>
   if (!squadra) return <Typography>Caricamento...</Typography>
 
+  // Lista degli account che si possono invitare (solo quelli senza squadra).
   const accountInvitabili = accounts.filter((acc) => !acc.id_squadra)
 
   return (
     <Stack spacing={3}>
       {feedback ? <Alert severity={feedback.severity}>{feedback.message}</Alert> : null}
 
+      {/* INTESTAZIONE blu della squadra. */}
       <Card
         sx={{
           borderRadius: 4,
-          background:
-            'linear-gradient(135deg, #134e5e 0%, #1976d2 70%, #71b7e6 100%)',
+          background: 'linear-gradient(135deg, #134e5e 0%, #1976d2 70%, #71b7e6 100%)',
           color: '#fff',
         }}
         variant="outlined"
@@ -209,24 +224,21 @@ export default function TeamPage() {
               <Typography variant="overline">Squadra</Typography>
               <Typography variant="h4">{squadra.nome}</Typography>
               <Stack direction="row" flexWrap="wrap" gap={1.5} sx={{ mt: 1.5 }}>
-                <Chip
-                  label={`${giocatori.length} giocatori`}
-                  sx={{ bgcolor: 'rgba(255,255,255,0.18)', color: '#fff' }}
-                />
+                <Chip label={`${giocatori.length} giocatori`} sx={overlayChipSx} />
+                {/* Allenatore (link al suo profilo). */}
                 {proprietario ? (
                   <Chip
                     component={Link}
                     clickable
                     label={`Allenatore: ${proprietario.nome} ${proprietario.cognome}`}
-                    sx={{ bgcolor: 'rgba(255,255,255,0.18)', color: '#fff' }}
+                    sx={overlayChipSx}
                     to={`/profilo/${proprietario.id}`}
                   />
                 ) : null}
-                {isOwner ? (
-                  <Chip color="success" label="Sei il proprietario" />
-                ) : null}
+                {isOwner ? <Chip color="success" label="Sei il proprietario" /> : null}
               </Stack>
             </Box>
+            {/* Pulsanti d'azione visibili SOLO al proprietario. */}
             {isOwner ? (
               <Stack direction={{ xs: 'row', md: 'column' }} spacing={1}>
                 <Button
@@ -251,6 +263,7 @@ export default function TeamPage() {
         </CardContent>
       </Card>
 
+      {/* RIGA DI STATISTICHE: tre riquadri colorati. */}
       <Stack direction="row" flexWrap="wrap" gap={2}>
         <StatBox color="#2e7d32" label="Vittorie" value={statistiche.vittorie} />
         <StatBox color="#0288d1" label="Pareggi" value={statistiche.pareggi} />
@@ -258,7 +271,7 @@ export default function TeamPage() {
       </Stack>
 
       <Grid container spacing={2.5}>
-        {/* Roster giocatori */}
+        {/* COLONNA SINISTRA: roster (elenco giocatori). */}
         <Grid item md={6} xs={12}>
           <Card variant="outlined" sx={{ height: '100%' }}>
             <CardContent>
@@ -271,6 +284,7 @@ export default function TeamPage() {
               ) : (
                 <Stack spacing={1}>
                   {giocatori.map((acc) => (
+                    // Card cliccabile per ogni giocatore (porta al suo profilo).
                     <CardActionArea
                       component={Link}
                       key={acc.id}
@@ -298,7 +312,7 @@ export default function TeamPage() {
           </Card>
         </Grid>
 
-        {/* Risultati / iscrizioni torneo */}
+        {/* COLONNA DESTRA: storico partite + iscrizioni a tornei. */}
         <Grid item md={6} xs={12}>
           <Card variant="outlined" sx={{ height: '100%' }}>
             <CardContent>
@@ -312,6 +326,7 @@ export default function TeamPage() {
               ) : (
                 <Stack spacing={1}>
                   {risultati.map((risultato) => {
+                    // Calcoliamo l'esito (vittoria / sconfitta / pareggio) dal punto di vista DI QUESTA squadra.
                     const isCasa = risultato.id_squadra_casa === idSquadra
                     const propri = isCasa ? risultato.gol_casa : risultato.gol_ospite
                     const avversari = isCasa ? risultato.gol_ospite : risultato.gol_casa
@@ -326,14 +341,8 @@ export default function TeamPage() {
                     }
                     return (
                       <Paper key={risultato.id} sx={{ p: 1.5 }} variant="outlined">
-                        <Stack
-                          alignItems="center"
-                          direction="row"
-                          justifyContent="space-between"
-                        >
-                          <Typography variant="body2">
-                            {propri} - {avversari}
-                          </Typography>
+                        <Stack alignItems="center" direction="row" justifyContent="space-between">
+                          <Typography variant="body2">{propri} - {avversari}</Typography>
                           <Chip color={esitoColor} label={esitoLabel} size="small" />
                         </Stack>
                       </Paper>
@@ -342,6 +351,7 @@ export default function TeamPage() {
                 </Stack>
               )}
 
+              {/* Sezione "Iscrizioni ai tornei": appare solo se ci sono richieste. */}
               {richieste.length > 0 ? (
                 <>
                   <Divider sx={{ my: 2 }} />
@@ -353,29 +363,13 @@ export default function TeamPage() {
                       const torneo = tornei.find((t) => t.id === richiesta.id_torneo)
                       return (
                         <Paper key={richiesta.id} sx={{ p: 1.5 }} variant="outlined">
-                          <Stack
-                            alignItems="center"
-                            direction="row"
-                            justifyContent="space-between"
-                          >
+                          <Stack alignItems="center" direction="row" justifyContent="space-between">
                             <Typography variant="body2">
                               {torneo ? torneo.nome : 'Torneo rimosso'}
                             </Typography>
                             <Chip
-                              color={
-                                richiesta.stato === 'accepted'
-                                  ? 'success'
-                                  : richiesta.stato === 'rejected'
-                                    ? 'error'
-                                    : 'default'
-                              }
-                              label={
-                                richiesta.stato === 'accepted'
-                                  ? 'Accettata'
-                                  : richiesta.stato === 'rejected'
-                                    ? 'Rifiutata'
-                                    : 'In attesa'
-                              }
+                              color={statoColor(richiesta.stato)}
+                              label={STATO_LABEL[richiesta.stato]}
                               size="small"
                             />
                           </Stack>
@@ -390,27 +384,25 @@ export default function TeamPage() {
         </Grid>
       </Grid>
 
-      {/* Dialog: invito giocatore */}
+      {/* DIALOGO: invito un nuovo giocatore. */}
       <Dialog fullWidth maxWidth="sm" onClose={() => setInviteOpen(false)} open={inviteOpen}>
         <DialogTitle>Invita un giocatore</DialogTitle>
         <Box component="form" onSubmit={handleInvite}>
           <DialogContent>
             <Typography color="text.secondary" sx={{ mb: 2 }} variant="body2">
-              Seleziona un giocatore senza squadra. Riceverà l invito nelle sue
-              notifiche.
+              Seleziona un giocatore senza squadra. Riceverà l invito nelle sue notifiche.
             </Typography>
             <TextField
               fullWidth
               label="Giocatore"
-              onChange={(event) => setInvitedAccountId(event.target.value)}
+              onChange={(e) => setInvitedAccountId(e.target.value)}
               required
               select
               value={invitedAccountId}
             >
+              {/* Se non ci sono giocatori invitabili, mostro una voce disabilitata. */}
               {accountInvitabili.length === 0 ? (
-                <MenuItem disabled value="">
-                  Nessun giocatore senza squadra
-                </MenuItem>
+                <MenuItem disabled value="">Nessun giocatore senza squadra</MenuItem>
               ) : null}
               {accountInvitabili.map((acc) => (
                 <MenuItem key={acc.id} value={acc.id}>
@@ -419,6 +411,7 @@ export default function TeamPage() {
               ))}
             </TextField>
 
+            {/* Lista degli inviti già spediti dalla squadra (se ce ne sono). */}
             {inviti.length > 0 ? (
               <Box sx={{ mt: 3 }}>
                 <Typography sx={{ mb: 1 }} variant="subtitle2">
@@ -438,20 +431,8 @@ export default function TeamPage() {
                           {acc ? `${acc.nome} ${acc.cognome}` : 'Giocatore'}
                         </Typography>
                         <Chip
-                          color={
-                            invito.stato === 'accepted'
-                              ? 'success'
-                              : invito.stato === 'rejected'
-                                ? 'error'
-                                : 'default'
-                          }
-                          label={
-                            invito.stato === 'accepted'
-                              ? 'Accettato'
-                              : invito.stato === 'rejected'
-                                ? 'Rifiutato'
-                                : 'In attesa'
-                          }
+                          color={statoColor(invito.stato)}
+                          label={INVITO_LABEL[invito.stato]}
                           size="small"
                         />
                       </Stack>
@@ -470,7 +451,7 @@ export default function TeamPage() {
         </Box>
       </Dialog>
 
-      {/* Dialog: iscrizione torneo */}
+      {/* DIALOGO: iscrizione della squadra a un torneo. */}
       <Dialog fullWidth maxWidth="sm" onClose={() => setRequestOpen(false)} open={requestOpen}>
         <DialogTitle>Iscrivi la squadra a un torneo</DialogTitle>
         <Box component="form" onSubmit={handleRequestTorneo}>
@@ -481,15 +462,13 @@ export default function TeamPage() {
             <TextField
               fullWidth
               label="Torneo"
-              onChange={(event) => setRequestTorneoId(event.target.value)}
+              onChange={(e) => setRequestTorneoId(e.target.value)}
               required
               select
               value={requestTorneoId}
             >
               {tornei.length === 0 ? (
-                <MenuItem disabled value="">
-                  Nessun torneo disponibile
-                </MenuItem>
+                <MenuItem disabled value="">Nessun torneo disponibile</MenuItem>
               ) : null}
               {tornei.map((torneo) => (
                 <MenuItem key={torneo.id} value={torneo.id}>

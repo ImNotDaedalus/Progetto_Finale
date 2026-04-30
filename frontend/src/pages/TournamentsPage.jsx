@@ -1,5 +1,10 @@
-// Pagina /tornei: lista dei tornei in formato card con ricerca per
-// nome, filtro per divisione, pulsante "Crea torneo" che apre un Dialog.
+// =============================================================================
+// TournamentsPage.jsx - pagina /tornei: elenco di tutti i tornei.
+//
+// Mostra le card dei tornei, con ricerca per nome/luogo e filtro per
+// divisione (A1, A2, B, C). Se sei loggato, c'è il pulsante "Crea torneo"
+// che apre un dialogo per crearne uno nuovo.
+// =============================================================================
 
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import EmojiEventsRoundedIcon from '@mui/icons-material/EmojiEventsRounded'
@@ -31,26 +36,23 @@ import { Link } from 'react-router-dom'
 import { useAuth } from '../context/useAuth'
 import { torneoService } from '../services/torneoService'
 
+// Lista delle divisioni valide (deve corrispondere ai valori accettati dal backend).
 const DIVISIONI = ['A1', 'A2', 'B', 'C']
-const emptyForm = {
-  nome: '',
-  data_inizio: '',
-  data_fine: '',
-  luogo: '',
-  divisione: '',
-}
+// Modulo "vuoto" iniziale del form di creazione torneo.
+const emptyForm = { nome: '', data_inizio: '', data_fine: '', luogo: '', divisione: '' }
 
 export default function TournamentsPage() {
   const { isAuthenticated, token } = useAuth()
 
   const [tornei, setTornei] = useState([])
-  const [search, setSearch] = useState('')
-  const [filterDivisione, setFilterDivisione] = useState('')
-  const [createOpen, setCreateOpen] = useState(false)
+  const [search, setSearch] = useState('')             // testo della ricerca
+  const [filterDivisione, setFilterDivisione] = useState('')  // divisione selezionata nel filtro
+  const [createOpen, setCreateOpen] = useState(false)  // dialogo "Crea torneo" aperto?
   const [form, setForm] = useState(emptyForm)
   const [feedback, setFeedback] = useState(null)
   const [actionLoading, setActionLoading] = useState('')
 
+  // Scarica la lista dei tornei.
   async function load() {
     try {
       setTornei(await torneoService.getTornei())
@@ -59,14 +61,15 @@ export default function TournamentsPage() {
     }
   }
 
+  // Al primo caricamento della pagina chiamiamo load().
   useEffect(() => {
     load()
   }, [])
 
-  function setField(field, value) {
-    setForm((current) => ({ ...current, [field]: value }))
-  }
+  // Aggiorna un singolo campo del form di creazione.
+  const setField = (field, value) => setForm((c) => ({ ...c, [field]: value }))
 
+  // Gestisce l'invio del form "Crea torneo".
   async function handleCreate(event) {
     event.preventDefault()
     setActionLoading('create')
@@ -83,10 +86,13 @@ export default function TournamentsPage() {
     }
   }
 
+  // Filtra i tornei in base a ricerca e filtro divisione.
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase()
     return tornei.filter((torneo) => {
+      // Se la divisione è impostata e non corrisponde, scarta.
       if (filterDivisione && torneo.divisione !== filterDivisione) return false
+      // Se c'è un testo di ricerca, controllo che sia in nome o luogo.
       if (query && !`${torneo.nome ?? ''} ${torneo.luogo ?? ''}`.toLowerCase().includes(query))
         return false
       return true
@@ -97,6 +103,7 @@ export default function TournamentsPage() {
     <Stack spacing={3}>
       {feedback ? <Alert severity={feedback.severity}>{feedback.message}</Alert> : null}
 
+      {/* INTESTAZIONE: titolo + pulsante "Crea torneo". */}
       <Stack
         alignItems={{ md: 'center' }}
         direction={{ xs: 'column', md: 'row' }}
@@ -119,6 +126,7 @@ export default function TournamentsPage() {
         </Button>
       </Stack>
 
+      {/* CARD con i campi RICERCA + FILTRO divisione. */}
       <Card variant="outlined">
         <CardContent>
           <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
@@ -131,28 +139,28 @@ export default function TournamentsPage() {
                 ),
               }}
               label="Cerca per nome o luogo"
-              onChange={(event) => setSearch(event.target.value)}
+              onChange={(e) => setSearch(e.target.value)}
               sx={{ flex: 1 }}
               value={search}
             />
             <TextField
               label="Divisione"
-              onChange={(event) => setFilterDivisione(event.target.value)}
+              onChange={(e) => setFilterDivisione(e.target.value)}
               select
               sx={{ minWidth: 180 }}
               value={filterDivisione}
             >
+              {/* Voce "Tutte" = nessun filtro. */}
               <MenuItem value="">Tutte</MenuItem>
               {DIVISIONI.map((d) => (
-                <MenuItem key={d} value={d}>
-                  {d}
-                </MenuItem>
+                <MenuItem key={d} value={d}>{d}</MenuItem>
               ))}
             </TextField>
           </Stack>
         </CardContent>
       </Card>
 
+      {/* GRIGLIA dei tornei filtrati. */}
       {filtered.length === 0 ? (
         <Alert severity="info">Nessun torneo corrispondente.</Alert>
       ) : (
@@ -160,6 +168,7 @@ export default function TournamentsPage() {
           {filtered.map((torneo) => (
             <Grid item key={torneo.id} md={4} sm={6} xs={12}>
               <Card sx={{ height: '100%' }} variant="outlined">
+                {/* Card cliccabile: porta al dettaglio del torneo. */}
                 <CardActionArea component={Link} to={`/torneo/${torneo.id}`} sx={{ height: '100%' }}>
                   <CardContent>
                     <Stack alignItems="flex-start" direction="row" spacing={2}>
@@ -167,9 +176,8 @@ export default function TournamentsPage() {
                         <EmojiEventsRoundedIcon />
                       </Avatar>
                       <Box flex={1} minWidth={0}>
-                        <Typography noWrap variant="h6">
-                          {torneo.nome}
-                        </Typography>
+                        {/* "noWrap" evita che il nome vada a capo se troppo lungo. */}
+                        <Typography noWrap variant="h6">{torneo.nome}</Typography>
                         <Chip
                           color="primary"
                           label={`Divisione ${torneo.divisione}`}
@@ -178,6 +186,7 @@ export default function TournamentsPage() {
                         />
                       </Box>
                     </Stack>
+                    {/* Date e luogo del torneo. */}
                     <Stack spacing={1} sx={{ mt: 2 }}>
                       <Stack alignItems="center" direction="row" spacing={1}>
                         <EventRoundedIcon color="action" fontSize="small" />
@@ -200,6 +209,7 @@ export default function TournamentsPage() {
         </Grid>
       )}
 
+      {/* DIALOGO "Crea torneo". */}
       <Dialog fullWidth maxWidth="sm" onClose={() => setCreateOpen(false)} open={createOpen}>
         <DialogTitle>Nuovo torneo</DialogTitle>
         <Box component="form" onSubmit={handleCreate}>
@@ -208,7 +218,7 @@ export default function TournamentsPage() {
               <TextField
                 fullWidth
                 label="Nome"
-                onChange={(event) => setField('nome', event.target.value)}
+                onChange={(e) => setField('nome', e.target.value)}
                 required
                 value={form.nome}
               />
@@ -217,7 +227,7 @@ export default function TournamentsPage() {
                   InputLabelProps={{ shrink: true }}
                   fullWidth
                   label="Data inizio"
-                  onChange={(event) => setField('data_inizio', event.target.value)}
+                  onChange={(e) => setField('data_inizio', e.target.value)}
                   required
                   type="date"
                   value={form.data_inizio}
@@ -226,7 +236,7 @@ export default function TournamentsPage() {
                   InputLabelProps={{ shrink: true }}
                   fullWidth
                   label="Data fine"
-                  onChange={(event) => setField('data_fine', event.target.value)}
+                  onChange={(e) => setField('data_fine', e.target.value)}
                   required
                   type="date"
                   value={form.data_fine}
@@ -235,22 +245,20 @@ export default function TournamentsPage() {
               <TextField
                 fullWidth
                 label="Luogo"
-                onChange={(event) => setField('luogo', event.target.value)}
+                onChange={(e) => setField('luogo', e.target.value)}
                 required
                 value={form.luogo}
               />
               <TextField
                 fullWidth
                 label="Divisione"
-                onChange={(event) => setField('divisione', event.target.value)}
+                onChange={(e) => setField('divisione', e.target.value)}
                 required
                 select
                 value={form.divisione}
               >
                 {DIVISIONI.map((d) => (
-                  <MenuItem key={d} value={d}>
-                    {d}
-                  </MenuItem>
+                  <MenuItem key={d} value={d}>{d}</MenuItem>
                 ))}
               </TextField>
             </Stack>

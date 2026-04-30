@@ -1,6 +1,14 @@
-// Pagina /notifiche: mostra gli inviti che ho ricevuto dalle squadre.
-// Per accettare un invito devo confermare con la mia password (il backend
-// la richiede in update). Accettare cambia il mio id_squadra.
+// =============================================================================
+// NotificationsPage.jsx - pagina /notifiche: inviti ricevuti dalle squadre.
+//
+// L'utente può:
+//   - vedere gli inviti pendenti ricevuti da varie squadre
+//   - accettarli (entra nella squadra) o rifiutarli
+//   - vedere lo storico (inviti già accettati o rifiutati)
+//
+// Per accettare serve reinserire la password (il backend richiede la password
+// in update); accettare cambia il proprio "id_squadra".
+// =============================================================================
 
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded'
 import HighlightOffRoundedIcon from '@mui/icons-material/HighlightOffRounded'
@@ -31,15 +39,18 @@ import { squadraService } from '../services/squadraService'
 
 export default function NotificationsPage() {
   const { currentAccount, isAuthenticated, refreshProfile, token } = useAuth()
-  const [inviti, setInviti] = useState([])
-  const [squadre, setSquadre] = useState([])
+
+  const [inviti, setInviti] = useState([])           // inviti dell'utente (dal localStorage)
+  const [squadre, setSquadre] = useState([])         // squadre (per mostrarne i nomi)
   const [feedback, setFeedback] = useState(null)
 
+  // Stato del dialogo di conferma password (per accettare un invito).
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [pendingInvite, setPendingInvite] = useState(null)
   const [password, setPassword] = useState('')
   const [actionLoading, setActionLoading] = useState('')
 
+  // Funzione che ricarica gli inviti dell'utente e la lista delle squadre.
   async function reload() {
     if (!currentAccount) return
     setInviti(inviteService.getInvitiPerAccount(currentAccount.id))
@@ -50,6 +61,7 @@ export default function NotificationsPage() {
     }
   }
 
+  // Quando l'utente cambia (login/logout) o c'è un altro evento, ricarichiamo.
   useEffect(() => {
     if (!isAuthenticated) return
     reload()
@@ -69,15 +81,19 @@ export default function NotificationsPage() {
     )
   }
 
+  // Apre il dialogo di conferma password per accettare un certo invito.
   function openConfirm(invito) {
     setPendingInvite(invito)
     setPassword('')
     setConfirmOpen(true)
   }
 
+  // Conferma dell'accettazione dell'invito.
   async function handleConfirmAccept(event) {
     event.preventDefault()
     if (!pendingInvite || !currentAccount) return
+
+    // Non si può entrare in due squadre contemporaneamente.
     if (currentAccount.id_squadra) {
       setFeedback({
         severity: 'warning',
@@ -88,6 +104,8 @@ export default function NotificationsPage() {
     }
     setActionLoading('accept')
     try {
+      // Aggiorniamo il proprio account impostando id_squadra a quello dell'invito.
+      // Il backend richiede TUTTI i campi anche se modifichiamo solo uno.
       await accountService.updateAccount(
         currentAccount.id,
         {
@@ -103,6 +121,7 @@ export default function NotificationsPage() {
         },
         token,
       )
+      // Marca l'invito come accettato e ricarica i dati.
       inviteService.setStato(pendingInvite.id, 'accepted')
       await refreshProfile(token)
       await reload()
@@ -116,14 +135,23 @@ export default function NotificationsPage() {
     }
   }
 
+  // Rifiuta un invito (non chiede password: è solo un cambio di stato locale).
   function handleReject(invito) {
     inviteService.setStato(invito.id, 'rejected')
     setInviti(inviteService.getInvitiPerAccount(currentAccount.id))
     setFeedback({ severity: 'info', message: 'Invito rifiutato.' })
   }
 
+  // Separiamo gli inviti in due gruppi: in attesa e già gestiti (storico).
   const pending = inviti.filter((i) => i.stato === 'pending')
   const storico = inviti.filter((i) => i.stato !== 'pending')
+
+  // Stile condiviso dei "box riga" per non ripeterlo.
+  const itemSx = {
+    border: '1px solid',
+    borderColor: 'divider',
+    borderRadius: 2,
+  }
 
   return (
     <Stack spacing={3}>
@@ -136,6 +164,7 @@ export default function NotificationsPage() {
         </Typography>
       </Box>
 
+      {/* CARD inviti in attesa di risposta. */}
       <Card variant="outlined">
         <CardContent>
           <Stack alignItems="center" direction="row" spacing={1.5}>
@@ -148,6 +177,7 @@ export default function NotificationsPage() {
           ) : (
             <Stack spacing={1.5}>
               {pending.map((invito) => {
+                // Cerco la squadra che mi ha invitato per mostrarne il nome.
                 const sq = squadre.find((s) => s.id === invito.id_squadra)
                 return (
                   <Stack
@@ -156,26 +186,20 @@ export default function NotificationsPage() {
                     justifyContent="space-between"
                     key={invito.id}
                     spacing={1.5}
-                    sx={{
-                      border: '1px solid',
-                      borderColor: 'divider',
-                      borderRadius: 2,
-                      p: 1.75,
-                    }}
+                    sx={{ ...itemSx, p: 1.75 }}
                   >
                     <Stack alignItems="center" direction="row" spacing={1.5}>
                       <Avatar sx={{ bgcolor: 'primary.main' }}>
                         {(sq?.nome ?? '?').charAt(0).toUpperCase()}
                       </Avatar>
                       <Box>
-                        <Typography variant="subtitle1">
-                          {sq ? sq.nome : 'Squadra'}
-                        </Typography>
+                        <Typography variant="subtitle1">{sq ? sq.nome : 'Squadra'}</Typography>
                         <Typography color="text.secondary" variant="caption">
                           Ti ha invitato a unirti alla squadra
                         </Typography>
                       </Box>
                     </Stack>
+                    {/* Due pulsanti: Accetta (verde) e Rifiuta (rosso). */}
                     <Stack direction="row" spacing={1}>
                       <Button
                         color="success"
@@ -202,6 +226,7 @@ export default function NotificationsPage() {
         </CardContent>
       </Card>
 
+      {/* CARD storico inviti (già accettati o rifiutati). */}
       <Card variant="outlined">
         <CardContent>
           <Typography variant="h6">Storico</Typography>
@@ -214,24 +239,19 @@ export default function NotificationsPage() {
             <Stack spacing={1}>
               {storico.map((invito) => {
                 const sq = squadre.find((s) => s.id === invito.id_squadra)
+                const accepted = invito.stato === 'accepted'
                 return (
                   <Stack
                     alignItems="center"
                     direction="row"
                     justifyContent="space-between"
                     key={invito.id}
-                    sx={{
-                      border: '1px solid',
-                      borderColor: 'divider',
-                      borderRadius: 2,
-                      px: 2,
-                      py: 1.25,
-                    }}
+                    sx={{ ...itemSx, px: 2, py: 1.25 }}
                   >
                     <Typography variant="body2">{sq ? sq.nome : 'Squadra'}</Typography>
                     <Chip
-                      color={invito.stato === 'accepted' ? 'success' : 'error'}
-                      label={invito.stato === 'accepted' ? 'Accettato' : 'Rifiutato'}
+                      color={accepted ? 'success' : 'error'}
+                      label={accepted ? 'Accettato' : 'Rifiutato'}
                       size="small"
                     />
                   </Stack>
@@ -242,24 +262,19 @@ export default function NotificationsPage() {
         </CardContent>
       </Card>
 
-      <Dialog
-        fullWidth
-        maxWidth="xs"
-        onClose={() => setConfirmOpen(false)}
-        open={confirmOpen}
-      >
+      {/* DIALOGO password: si apre quando si clicca "Accetta". */}
+      <Dialog fullWidth maxWidth="xs" onClose={() => setConfirmOpen(false)} open={confirmOpen}>
         <DialogTitle>Conferma con la password</DialogTitle>
         <Box component="form" onSubmit={handleConfirmAccept}>
           <DialogContent>
             <Typography color="text.secondary" sx={{ mb: 2 }} variant="body2">
-              Per entrare nella squadra dobbiamo aggiornare il tuo profilo:
-              reinserisci la tua password.
+              Per entrare nella squadra dobbiamo aggiornare il tuo profilo: reinserisci la tua password.
             </Typography>
             <TextField
               autoFocus
               fullWidth
               label="Password"
-              onChange={(event) => setPassword(event.target.value)}
+              onChange={(e) => setPassword(e.target.value)}
               required
               type="password"
               value={password}

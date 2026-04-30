@@ -1,3 +1,16 @@
+// =============================================================================
+// navigation.js - elenco delle voci del menu laterale (sidebar).
+//
+// Ogni voce ha:
+//   - label: il testo che si vede
+//   - path: l'indirizzo del sito a cui porta (es. /tornei)
+//   - icon: l'icona da mostrare (presa dalla libreria Material UI)
+//   - description: testo piccolo mostrato sotto la voce
+//
+// Tenere queste voci in un file separato rende facile aggiungerne / toglierne
+// senza dover toccare il layout principale.
+// =============================================================================
+
 import EmojiEventsRoundedIcon from '@mui/icons-material/EmojiEventsRounded'
 import Groups2RoundedIcon from '@mui/icons-material/Groups2Rounded'
 import HomeRoundedIcon from '@mui/icons-material/HomeRounded'

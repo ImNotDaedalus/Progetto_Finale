@@ -1,9 +1,13 @@
-// Pagina /torneo/:id: dettaglio del torneo.
-// - intestazione con info principali
-// - squadre partecipanti (richieste accettate)
-// - gestione richieste pending (accetta / rifiuta)
-// - gare programmate per questo torneo + creazione di una nuova gara
-// - registrazione risultati
+// =============================================================================
+// TournamentPage.jsx - pagina /torneo/:id: dettaglio di un singolo torneo.
+//
+// Mostra:
+//   - intestazione con info principali (date, luogo, divisione)
+//   - squadre partecipanti (richieste accettate)
+//   - richieste in attesa: il proprietario può accettarle/rifiutarle
+//   - calendario gare del torneo (il proprietario può aggiungerne)
+//   - risultati (il proprietario può registrarli)
+// =============================================================================
 
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import EmojiEventsRoundedIcon from '@mui/icons-material/EmojiEventsRounded'
@@ -41,6 +45,7 @@ import { resultService } from '../services/resultService'
 import { squadraService } from '../services/squadraService'
 import { torneoService } from '../services/torneoService'
 
+// Form vuoti usati come stato iniziale dei due dialoghi modali.
 const emptyResultForm = {
   id_gara: '',
   id_squadra_casa: '',
@@ -48,14 +53,17 @@ const emptyResultForm = {
   gol_casa: '',
   gol_ospite: '',
 }
-
 const emptyGaraForm = { data: '', ora: '' }
+
+// Stile delle "etichette" sopra al gradiente blu.
+const overlayChipSx = { bgcolor: 'rgba(255,255,255,0.16)', color: '#fff' }
 
 export default function TournamentPage() {
   const { id } = useParams()
   const idTorneo = Number(id)
   const { currentAccount, isAuthenticated, token } = useAuth()
 
+  // Stato della pagina.
   const [torneo, setTorneo] = useState(null)
   const [squadre, setSquadre] = useState([])
   const [richieste, setRichieste] = useState([])
@@ -64,16 +72,19 @@ export default function TournamentPage() {
   const [error, setError] = useState('')
   const [feedback, setFeedback] = useState(null)
 
+  // Stati dei dialoghi (Aggiungi gara, Registra risultato).
   const [resultOpen, setResultOpen] = useState(false)
   const [resultForm, setResultForm] = useState(emptyResultForm)
   const [garaOpen, setGaraOpen] = useState(false)
   const [garaForm, setGaraForm] = useState(emptyGaraForm)
 
+  // (Ri)carica tutti i dati necessari alla pagina.
   async function reload() {
     try {
       setTorneo(await torneoService.getTorneoById(idTorneo))
       setSquadre(await squadraService.getSquadre())
-      setGare((await garaService.getGare()).filter((gara) => gara.id_torneo === idTorneo))
+      // Filtriamo solo le gare di questo torneo (il backend ritorna tutte).
+      setGare((await garaService.getGare()).filter((g) => g.id_torneo === idTorneo))
       setRichieste(requestService.getRichiestePerTorneo(idTorneo))
       setRisultati(resultService.getRisultatiPerTorneo(idTorneo))
     } catch (err) {
@@ -87,64 +98,51 @@ export default function TournamentPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idTorneo, isAuthenticated])
 
+  // Lista delle squadre confermate (richieste accettate).
   const squadrePartecipanti = useMemo(
     () =>
       richieste
         .filter((r) => r.stato === 'accepted')
         .map((r) => squadre.find((sq) => sq.id === r.id_squadra))
-        .filter(Boolean),
+        .filter(Boolean),                          // togli eventuali "undefined"
     [richieste, squadre],
   )
 
+  // Le richieste ancora da approvare.
   const richiestePending = richieste.filter((r) => r.stato === 'pending')
 
-  // Sei il proprietario di questo torneo?
+  // Sei il proprietario di questo torneo? Da questo dipendono molti pulsanti.
   const isOwner = useMemo(
     () => Boolean(torneo && currentAccount && torneo.id_proprietario === currentAccount.id),
     [torneo, currentAccount],
   )
 
-  function setResultField(field, value) {
-    setResultForm((current) => ({ ...current, [field]: value }))
-  }
+  // Helper per aggiornare un campo dei form.
+  const setResultField = (field, value) => setResultForm((c) => ({ ...c, [field]: value }))
+  const setGaraField = (field, value) => setGaraForm((c) => ({ ...c, [field]: value }))
 
-  function setGaraField(field, value) {
-    setGaraForm((current) => ({ ...current, [field]: value }))
-  }
-
-  function handleApprove(idRichiesta) {
+  // Cambia lo stato di una richiesta (accettata o rifiutata) — solo se sei proprietario.
+  function setRichiestaStato(idRichiesta, stato) {
     if (!isOwner) {
       setFeedback({
         severity: 'error',
-        message: 'Solo il proprietario del torneo puo accettare le richieste.',
+        message: `Solo il proprietario del torneo puo ${stato === 'accepted' ? 'accettare' : 'rifiutare'} le richieste.`,
       })
       return
     }
-    requestService.setStato(idRichiesta, 'accepted')
+    requestService.setStato(idRichiesta, stato)
     setRichieste(requestService.getRichiestePerTorneo(idTorneo))
-    setFeedback({ severity: 'success', message: 'Richiesta accettata.' })
+    setFeedback(
+      stato === 'accepted'
+        ? { severity: 'success', message: 'Richiesta accettata.' }
+        : { severity: 'info', message: 'Richiesta rifiutata.' },
+    )
   }
 
-  function handleReject(idRichiesta) {
-    if (!isOwner) {
-      setFeedback({
-        severity: 'error',
-        message: 'Solo il proprietario del torneo puo rifiutare le richieste.',
-      })
-      return
-    }
-    requestService.setStato(idRichiesta, 'rejected')
-    setRichieste(requestService.getRichiestePerTorneo(idTorneo))
-    setFeedback({ severity: 'info', message: 'Richiesta rifiutata.' })
-  }
-
+  // Salva un nuovo risultato. Vari controlli: gara/squadre obbligatorie, squadre diverse...
   function handleSaveResult(event) {
     event.preventDefault()
-    if (
-      !resultForm.id_gara ||
-      !resultForm.id_squadra_casa ||
-      !resultForm.id_squadra_ospite
-    ) {
+    if (!resultForm.id_gara || !resultForm.id_squadra_casa || !resultForm.id_squadra_ospite) {
       setFeedback({ severity: 'warning', message: 'Compila gara e squadre.' })
       return
     }
@@ -152,6 +150,7 @@ export default function TournamentPage() {
       setFeedback({ severity: 'warning', message: 'Le due squadre devono essere diverse.' })
       return
     }
+    // Convertiamo i campi in numeri (i form HTML restituiscono stringhe).
     resultService.createRisultato({
       id_gara: Number(resultForm.id_gara),
       id_torneo: idTorneo,
@@ -166,16 +165,12 @@ export default function TournamentPage() {
     setFeedback({ severity: 'success', message: 'Risultato salvato.' })
   }
 
+  // Crea una nuova gara (chiama il backend).
   async function handleCreateGara(event) {
     event.preventDefault()
     try {
       await garaService.createGara(
-        {
-          data: garaForm.data,
-          ora: garaForm.ora,
-          id_torneo: idTorneo,
-          id_gara_precedente: null,
-        },
+        { data: garaForm.data, ora: garaForm.ora, id_torneo: idTorneo, id_gara_precedente: null },
         token,
       )
       setGaraForm(emptyGaraForm)
@@ -187,6 +182,7 @@ export default function TournamentPage() {
     }
   }
 
+  // Casi di non-loggato / errore / caricamento.
   if (!isAuthenticated) {
     return (
       <Card variant="outlined">
@@ -207,12 +203,12 @@ export default function TournamentPage() {
     <Stack spacing={3}>
       {feedback ? <Alert severity={feedback.severity}>{feedback.message}</Alert> : null}
 
+      {/* INTESTAZIONE blu del torneo: nome, date, luogo, divisione. */}
       <Card
         sx={{
           borderRadius: 4,
           overflow: 'hidden',
-          background:
-            'linear-gradient(135deg, #0d3b66 0%, #1976d2 70%, #4ea3f5 100%)',
+          background: 'linear-gradient(135deg, #0d3b66 0%, #1976d2 70%, #4ea3f5 100%)',
           color: '#fff',
         }}
         variant="outlined"
@@ -229,23 +225,15 @@ export default function TournamentPage() {
                 <Chip
                   icon={<EventRoundedIcon />}
                   label={`${torneo.data_inizio} → ${torneo.data_fine}`}
-                  sx={{ bgcolor: 'rgba(255,255,255,0.16)', color: '#fff' }}
+                  sx={overlayChipSx}
                 />
-                <Chip
-                  icon={<PlaceRoundedIcon />}
-                  label={torneo.luogo}
-                  sx={{ bgcolor: 'rgba(255,255,255,0.16)', color: '#fff' }}
-                />
+                <Chip icon={<PlaceRoundedIcon />} label={torneo.luogo} sx={overlayChipSx} />
                 <Chip
                   label={`Divisione ${torneo.divisione}`}
                   sx={{ bgcolor: 'rgba(255,255,255,0.24)', color: '#fff', fontWeight: 600 }}
                 />
                 {isOwner ? (
-                  <Chip
-                    color="success"
-                    label="Sei il proprietario"
-                    sx={{ fontWeight: 600 }}
-                  />
+                  <Chip color="success" label="Sei il proprietario" sx={{ fontWeight: 600 }} />
                 ) : null}
               </Stack>
             </Box>
@@ -254,7 +242,7 @@ export default function TournamentPage() {
       </Card>
 
       <Grid container spacing={2.5}>
-        {/* Squadre partecipanti */}
+        {/* RIQUADRO 1: Squadre partecipanti. */}
         <Grid item md={6} xs={12}>
           <Card variant="outlined" sx={{ height: '100%' }}>
             <CardContent>
@@ -290,7 +278,7 @@ export default function TournamentPage() {
           </Card>
         </Grid>
 
-        {/* Richieste pending */}
+        {/* RIQUADRO 2: Richieste in attesa, accetta/rifiuta (solo proprietario). */}
         <Grid item md={6} xs={12}>
           <Card variant="outlined" sx={{ height: '100%' }}>
             <CardContent>
@@ -320,11 +308,12 @@ export default function TournamentPage() {
                           <Typography variant="subtitle1">
                             {sq ? sq.nome : 'Squadra rimossa'}
                           </Typography>
+                          {/* Bottoni Accetta/Rifiuta solo se sono il proprietario. */}
                           {isOwner ? (
                             <Stack direction="row" spacing={1}>
                               <Button
                                 color="success"
-                                onClick={() => handleApprove(richiesta.id)}
+                                onClick={() => setRichiestaStato(richiesta.id, 'accepted')}
                                 size="small"
                                 variant="contained"
                               >
@@ -332,7 +321,7 @@ export default function TournamentPage() {
                               </Button>
                               <Button
                                 color="error"
-                                onClick={() => handleReject(richiesta.id)}
+                                onClick={() => setRichiestaStato(richiesta.id, 'rejected')}
                                 size="small"
                                 variant="outlined"
                               >
@@ -352,7 +341,7 @@ export default function TournamentPage() {
           </Card>
         </Grid>
 
-        {/* Calendario gare */}
+        {/* RIQUADRO 3: Calendario gare del torneo. */}
         <Grid item md={6} xs={12}>
           <Card variant="outlined" sx={{ height: '100%' }}>
             <CardContent>
@@ -361,12 +350,9 @@ export default function TournamentPage() {
                   <EventRoundedIcon color="primary" />
                   <Typography variant="h6">Gare in programma</Typography>
                 </Stack>
+                {/* Solo il proprietario può aggiungere gare. */}
                 {isOwner ? (
-                  <Button
-                    onClick={() => setGaraOpen(true)}
-                    size="small"
-                    startIcon={<AddRoundedIcon />}
-                  >
+                  <Button onClick={() => setGaraOpen(true)} size="small" startIcon={<AddRoundedIcon />}>
                     Aggiungi
                   </Button>
                 ) : null}
@@ -399,7 +385,7 @@ export default function TournamentPage() {
           </Card>
         </Grid>
 
-        {/* Risultati */}
+        {/* RIQUADRO 4: Risultati. */}
         <Grid item md={6} xs={12}>
           <Card variant="outlined" sx={{ height: '100%' }}>
             <CardContent>
@@ -408,6 +394,7 @@ export default function TournamentPage() {
                   <ScoreboardRoundedIcon color="primary" />
                   <Typography variant="h6">Risultati</Typography>
                 </Stack>
+                {/* Bottone "Registra" abilitato solo se ci sono almeno 2 squadre e 1 gara. */}
                 {isOwner ? (
                   <Button
                     disabled={squadrePartecipanti.length < 2 || gare.length === 0}
@@ -425,15 +412,12 @@ export default function TournamentPage() {
               ) : (
                 <Stack spacing={1}>
                   {risultati.map((risultato) => {
+                    // Cerco i nomi delle due squadre per mostrarli accanto al punteggio.
                     const casa = squadre.find((s) => s.id === risultato.id_squadra_casa)
                     const ospite = squadre.find((s) => s.id === risultato.id_squadra_ospite)
                     return (
                       <Paper key={risultato.id} sx={{ p: 1.5 }} variant="outlined">
-                        <Stack
-                          alignItems="center"
-                          direction="row"
-                          justifyContent="space-between"
-                        >
+                        <Stack alignItems="center" direction="row" justifyContent="space-between">
                           <Typography sx={{ flex: 1 }} variant="body2">
                             {casa ? casa.nome : '—'}
                           </Typography>
@@ -456,7 +440,7 @@ export default function TournamentPage() {
         </Grid>
       </Grid>
 
-      {/* Dialog: nuova gara */}
+      {/* DIALOGO: aggiungi una nuova gara al calendario. */}
       <Dialog fullWidth maxWidth="xs" onClose={() => setGaraOpen(false)} open={garaOpen}>
         <DialogTitle>Nuova gara</DialogTitle>
         <Box component="form" onSubmit={handleCreateGara}>
@@ -466,7 +450,7 @@ export default function TournamentPage() {
                 InputLabelProps={{ shrink: true }}
                 fullWidth
                 label="Data"
-                onChange={(event) => setGaraField('data', event.target.value)}
+                onChange={(e) => setGaraField('data', e.target.value)}
                 required
                 type="date"
                 value={garaForm.data}
@@ -475,7 +459,7 @@ export default function TournamentPage() {
                 InputLabelProps={{ shrink: true }}
                 fullWidth
                 label="Ora"
-                onChange={(event) => setGaraField('ora', event.target.value)}
+                onChange={(e) => setGaraField('ora', e.target.value)}
                 required
                 type="time"
                 value={garaForm.ora}
@@ -484,14 +468,12 @@ export default function TournamentPage() {
           </DialogContent>
           <DialogActions>
             <Button onClick={() => setGaraOpen(false)}>Annulla</Button>
-            <Button type="submit" variant="contained">
-              Aggiungi
-            </Button>
+            <Button type="submit" variant="contained">Aggiungi</Button>
           </DialogActions>
         </Box>
       </Dialog>
 
-      {/* Dialog: nuovo risultato */}
+      {/* DIALOGO: registra il risultato di una gara. */}
       <Dialog fullWidth maxWidth="sm" onClose={() => setResultOpen(false)} open={resultOpen}>
         <DialogTitle>Registra risultato</DialogTitle>
         <Box component="form" onSubmit={handleSaveResult}>
@@ -500,7 +482,7 @@ export default function TournamentPage() {
               <TextField
                 fullWidth
                 label="Gara"
-                onChange={(event) => setResultField('id_gara', event.target.value)}
+                onChange={(e) => setResultField('id_gara', e.target.value)}
                 required
                 select
                 value={resultForm.id_gara}
@@ -511,48 +493,46 @@ export default function TournamentPage() {
                   </MenuItem>
                 ))}
               </TextField>
+              {/* Squadra casa / ospite affiancate sui monitor grandi. */}
               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
                 <TextField
                   fullWidth
                   label="Squadra casa"
-                  onChange={(event) => setResultField('id_squadra_casa', event.target.value)}
+                  onChange={(e) => setResultField('id_squadra_casa', e.target.value)}
                   required
                   select
                   value={resultForm.id_squadra_casa}
                 >
                   {squadrePartecipanti.map((sq) => (
-                    <MenuItem key={sq.id} value={sq.id}>
-                      {sq.nome}
-                    </MenuItem>
+                    <MenuItem key={sq.id} value={sq.id}>{sq.nome}</MenuItem>
                   ))}
                 </TextField>
                 <TextField
                   fullWidth
                   label="Squadra ospite"
-                  onChange={(event) => setResultField('id_squadra_ospite', event.target.value)}
+                  onChange={(e) => setResultField('id_squadra_ospite', e.target.value)}
                   required
                   select
                   value={resultForm.id_squadra_ospite}
                 >
                   {squadrePartecipanti.map((sq) => (
-                    <MenuItem key={sq.id} value={sq.id}>
-                      {sq.nome}
-                    </MenuItem>
+                    <MenuItem key={sq.id} value={sq.id}>{sq.nome}</MenuItem>
                   ))}
                 </TextField>
               </Stack>
+              {/* Goal segnati dalle due squadre. */}
               <Stack direction="row" spacing={2}>
                 <TextField
                   fullWidth
                   label="Gol casa"
-                  onChange={(event) => setResultField('gol_casa', event.target.value)}
+                  onChange={(e) => setResultField('gol_casa', e.target.value)}
                   type="number"
                   value={resultForm.gol_casa}
                 />
                 <TextField
                   fullWidth
                   label="Gol ospite"
-                  onChange={(event) => setResultField('gol_ospite', event.target.value)}
+                  onChange={(e) => setResultField('gol_ospite', e.target.value)}
                   type="number"
                   value={resultForm.gol_ospite}
                 />
@@ -561,9 +541,7 @@ export default function TournamentPage() {
           </DialogContent>
           <DialogActions>
             <Button onClick={() => setResultOpen(false)}>Annulla</Button>
-            <Button type="submit" variant="contained">
-              Salva
-            </Button>
+            <Button type="submit" variant="contained">Salva</Button>
           </DialogActions>
         </Box>
       </Dialog>

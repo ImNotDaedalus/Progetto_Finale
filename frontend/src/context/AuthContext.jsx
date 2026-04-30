@@ -1,6 +1,16 @@
-// Questo file tiene il "contesto" dell'utente loggato per tutta l'app:
-// token, email della sessione e account collegato. Le pagine leggono
-// questi dati con l'hook useAuth().
+// =============================================================================
+// AuthContext.jsx - "memoria condivisa" sull'utente loggato.
+//
+// Cosa fa il "Context" in React? Permette di condividere dei dati con tutti
+// i componenti dell'app SENZA doverli passare manualmente di pagina in pagina.
+// Qui memorizziamo:
+//   - il token JWT (la "tessera digitale" del login)
+//   - l'email della sessione
+//   - l'oggetto completo dell'account loggato
+//   - se siamo ancora "in caricamento" (autenticazione in verifica)
+//
+// Le pagine usano l'hook useAuth() per leggere/usare questi dati.
+// =============================================================================
 
 import { createContext, useEffect, useState } from 'react'
 import { accountService, resolveAccountSession } from '../services/accountService'
@@ -10,39 +20,43 @@ import {
   setStoredToken,
 } from '../services/httpClient'
 
+// Crea il contesto vuoto. Useremo il Provider per riempirlo con dati veri.
 const AuthContext = createContext(null)
 
 export function AuthProvider({ children }) {
-  // Token salvato nel browser (stringa vuota se non loggato).
+  // ---- Stato condiviso ----
+  // Il token salvato nel browser (stringa vuota se non loggato).
   const [token, setToken] = useState(() => getStoredToken())
-  // Email dell'utente loggato.
+  // Email dell'utente loggato (la otteniamo dalla rotta /protected del backend).
   const [sessionEmail, setSessionEmail] = useState('')
-  // Dati dell'account loggato (nome, cognome, ...).
+  // Dati completi dell'account loggato (nome, cognome, ecc.).
   const [currentAccount, setCurrentAccount] = useState(null)
-  // Vero finché stiamo ancora verificando se c'è un utente loggato.
+  // True finché stiamo ancora controllando il token: utile per non mostrare
+  // "non sei loggato" un istante prima di aver finito di verificare.
   const [authLoading, setAuthLoading] = useState(Boolean(getStoredToken()))
 
-  // Salva il token nel browser e nello stato (o lo cancella se vuoto).
+  // Salva il token nel browser (e nello stato), oppure lo cancella.
   function persistToken(nextToken) {
-    if (nextToken) {
-      setStoredToken(nextToken)
-    } else {
-      clearStoredToken()
-    }
+    if (nextToken) setStoredToken(nextToken)
+    else clearStoredToken()
     setToken(nextToken ?? '')
   }
 
-  // Chiede al backend i dati dell'utente loggato e li salva in memoria.
-  // In caso di errore lascia il token al chiamante, che decide se invalidarlo.
+  // Resetta i dati di sessione (email + account) senza toccare il token.
+  function clearSession() {
+    setSessionEmail('')
+    setCurrentAccount(null)
+  }
+
+  // Chiede al backend i dati aggiornati dell'utente loggato e li salva qui.
+  // Si usa, ad esempio, dopo che l'utente ha modificato il proprio profilo.
   async function refreshProfile(tokenOverride) {
     const activeToken = tokenOverride ?? token
-
     if (!activeToken) {
-      setSessionEmail('')
-      setCurrentAccount(null)
+      // Niente token = nessuna sessione attiva.
+      clearSession()
       return null
     }
-
     setAuthLoading(true)
     try {
       const session = await resolveAccountSession(activeToken)
@@ -50,13 +64,13 @@ export function AuthProvider({ children }) {
       setCurrentAccount(session.currentAccount)
       return session.currentAccount
     } finally {
+      // Comunque vada (successo o errore), togliamo la "rotellina di caricamento".
       setAuthLoading(false)
     }
   }
 
-  // Esegue il login: il backend verifica le credenziali nel database
-  // e restituisce un token JWT. Se la verifica fallisce viene lanciato
-  // un errore con il messaggio del server.
+  // Login: il backend verifica le credenziali e restituisce un token JWT.
+  // Se le credenziali sono sbagliate, lancia un errore col messaggio del server.
   async function login(credentials) {
     setAuthLoading(true)
     try {
@@ -64,35 +78,35 @@ export function AuthProvider({ children }) {
       persistToken(response.access_token)
       return response
     } catch (error) {
+      // Per sicurezza, se il login fallisce cancelliamo eventuali token vecchi.
       persistToken('')
       setAuthLoading(false)
       throw error
     }
   }
 
-  // Dimentica l'utente: cancella token e dati.
+  // Logout: dimentica completamente l'utente.
   function logout() {
     persistToken('')
-    setSessionEmail('')
-    setCurrentAccount(null)
+    clearSession()
     setAuthLoading(false)
   }
 
-  // Al caricamento della pagina, se c'è già un token salvato
-  // provo a recuperare il profilo dell'utente.
+  // Effetto: appena si carica la pagina (o cambia il token) proviamo a
+  // recuperare il profilo dell'utente. Così se un utente già loggato
+  // ricarica la pagina, viene riconosciuto in automatico.
   useEffect(() => {
-    let ignore = false
+    let ignore = false  // serve a non aggiornare lo stato se il componente è già stato smontato
 
     async function restoreSession() {
       if (!token) {
+        // Niente token: smettiamo di caricare e azzeriamo i dati di sessione.
         if (!ignore) {
           setAuthLoading(false)
-          setSessionEmail('')
-          setCurrentAccount(null)
+          clearSession()
         }
         return
       }
-
       try {
         const session = await resolveAccountSession(token)
         if (!ignore) {
@@ -100,29 +114,28 @@ export function AuthProvider({ children }) {
           setCurrentAccount(session.currentAccount)
         }
       } catch {
-        // Profilo non disponibile (es. backend offline): mantengo il token,
-        // sarà invalidato solo quando il backend risponderà 401.
-        if (!ignore) {
-          setSessionEmail('')
-          setCurrentAccount(null)
-        }
+        // Backend offline o errore di rete: manteniamo il token (sarà
+        // invalidato solo se il server risponde 401 alla prossima chiamata).
+        if (!ignore) clearSession()
       } finally {
         if (!ignore) setAuthLoading(false)
       }
     }
 
     restoreSession()
-
+    // Cleanup: se il componente viene smontato prima della fine, ignoriamo i risultati.
     return () => {
       ignore = true
     }
   }, [token])
 
+  // Qui esponiamo l'oggetto che le pagine vedranno tramite useAuth().
   return (
     <AuthContext.Provider
       value={{
         authLoading,
         currentAccount,
+        // Comodo: "isAuthenticated" è true solo se c'è un token.
         isAuthenticated: Boolean(token),
         login,
         logout,

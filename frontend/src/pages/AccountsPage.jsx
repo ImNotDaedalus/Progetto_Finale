@@ -1,6 +1,14 @@
-// Pagina /account: il profilo personale dell'utente loggato.
-// Permette di aggiornare i propri dati o di cancellare il proprio
-// account. Niente piu pannello di amministrazione.
+// =============================================================================
+// AccountsPage.jsx - pagina /account: profilo personale dell'utente loggato.
+//
+// Permette di:
+//   - vedere i propri dati anagrafici e la propria squadra
+//   - modificare i dati (chiede conferma con la password attuale)
+//   - eliminare il proprio account (apre un dialogo di conferma)
+//
+// Cambiare l'email comporta logout automatico (perché il token JWT è legato
+// alla vecchia email e quindi non sarebbe più valido).
+// =============================================================================
 
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import ManageAccountsRoundedIcon from '@mui/icons-material/ManageAccountsRounded'
@@ -31,6 +39,7 @@ import { useAuth } from '../context/useAuth'
 import { accountService } from '../services/accountService'
 import { squadraService } from '../services/squadraService'
 
+// Modulo "vuoto" usato come stato iniziale e quando non c'è un utente.
 const emptyProfileForm = {
   nome: '',
   cognome: '',
@@ -42,34 +51,36 @@ const emptyProfileForm = {
   indirizzo: '',
 }
 
+/** Riempie il modulo con i dati di un account (lasciando la password vuota:
+ *  l'utente la deve reinserire ogni volta che vuole salvare). */
+const accountToForm = (acc) => ({
+  nome: acc.nome ?? '',
+  cognome: acc.cognome ?? '',
+  email: acc.email ?? '',
+  password: '',
+  nazionalita: acc.nazionalita ?? '',
+  data_nascita: acc.data_nascita ?? '',
+  sesso: acc.sesso ?? '',
+  indirizzo: acc.indirizzo ?? '',
+})
+
 export default function AccountsPage() {
   const navigate = useNavigate()
-  const { currentAccount, isAuthenticated, logout, refreshProfile, token } =
-    useAuth()
+  const { currentAccount, isAuthenticated, logout, refreshProfile, token } = useAuth()
 
+  // Stato del form e della pagina.
   const [form, setForm] = useState(emptyProfileForm)
-  const [squadra, setSquadra] = useState(null)
+  const [squadra, setSquadra] = useState(null)         // squadra dell'utente (se ne ha una)
   const [actionLoading, setActionLoading] = useState('')
   const [feedback, setFeedback] = useState(null)
-  const [deleteOpen, setDeleteOpen] = useState(false)
+  const [deleteOpen, setDeleteOpen] = useState(false)  // dialogo di conferma cancellazione
 
+  // Quando i dati dell'utente cambiano, riempiamo il modulo con i suoi valori.
   useEffect(() => {
-    if (!currentAccount) {
-      setForm(emptyProfileForm)
-      return
-    }
-    setForm({
-      nome: currentAccount.nome ?? '',
-      cognome: currentAccount.cognome ?? '',
-      email: currentAccount.email ?? '',
-      password: '',
-      nazionalita: currentAccount.nazionalita ?? '',
-      data_nascita: currentAccount.data_nascita ?? '',
-      sesso: currentAccount.sesso ?? '',
-      indirizzo: currentAccount.indirizzo ?? '',
-    })
+    setForm(currentAccount ? accountToForm(currentAccount) : emptyProfileForm)
   }, [currentAccount])
 
+  // Se l'utente ha una squadra, scarichiamone i dati per mostrarli nell'header.
   useEffect(() => {
     if (!currentAccount?.id_squadra) {
       setSquadra(null)
@@ -78,17 +89,14 @@ export default function AccountsPage() {
     let ignore = false
     squadraService
       .getSquadraById(currentAccount.id_squadra)
-      .then((sq) => {
-        if (!ignore) setSquadra(sq)
-      })
-      .catch(() => {
-        if (!ignore) setSquadra(null)
-      })
+      .then((sq) => !ignore && setSquadra(sq))
+      .catch(() => !ignore && setSquadra(null))
     return () => {
       ignore = true
     }
   }, [currentAccount])
 
+  // Se non sei loggato, mostro un invito ad accedere.
   if (!isAuthenticated) {
     return (
       <Card variant="outlined">
@@ -105,14 +113,14 @@ export default function AccountsPage() {
     )
   }
 
-  function setField(field, value) {
-    setForm((current) => ({ ...current, [field]: value }))
-  }
+  // Helper per cambiare un singolo campo del form.
+  const setField = (field, value) => setForm((c) => ({ ...c, [field]: value }))
 
+  // Gestisce il "Salva modifiche".
   async function handleSave(event) {
     event.preventDefault()
     if (!currentAccount) return
-
+    // La password attuale è obbligatoria per confermare le modifiche.
     if (!form.password) {
       setFeedback({
         severity: 'warning',
@@ -121,23 +129,28 @@ export default function AccountsPage() {
       return
     }
 
+    // Se l'utente sta cambiando la propria email, dovrà rifare il login dopo.
     const emailChanged = currentAccount.email !== form.email
     setFeedback(null)
     setActionLoading('save')
     try {
       await accountService.updateAccount(
         currentAccount.id,
+        // Manteniamo la stessa squadra: questa pagina non la cambia.
         { ...form, id_squadra: currentAccount.id_squadra ?? null },
         token,
       )
+      // Email cambiata: faccio logout perché il vecchio token non è più valido.
       if (emailChanged) {
         logout()
         navigate('/auth')
         return
       }
+      // Aggiorno i dati dell'utente in memoria con le nuove informazioni.
       await refreshProfile(token)
       setFeedback({ severity: 'success', message: 'Profilo aggiornato.' })
-      setForm((current) => ({ ...current, password: '' }))
+      // Svuoto il campo password dopo il salvataggio (per sicurezza).
+      setForm((c) => ({ ...c, password: '' }))
     } catch (error) {
       setFeedback({ severity: 'error', message: error.message })
     } finally {
@@ -145,6 +158,7 @@ export default function AccountsPage() {
     }
   }
 
+  // Conferma definitiva di eliminazione account.
   async function handleConfirmDelete() {
     if (!currentAccount) return
     setActionLoading('delete')
@@ -159,15 +173,16 @@ export default function AccountsPage() {
     }
   }
 
-  const initials =
-    currentAccount && currentAccount.nome
-      ? `${currentAccount.nome.charAt(0)}${(currentAccount.cognome ?? '').charAt(0)}`.toUpperCase()
-      : '?'
+  // Iniziali dell'avatar grande in alto (es. "MR").
+  const initials = currentAccount?.nome
+    ? `${currentAccount.nome.charAt(0)}${(currentAccount.cognome ?? '').charAt(0)}`.toUpperCase()
+    : '?'
 
   return (
     <Stack spacing={3}>
       {feedback ? <Alert severity={feedback.severity}>{feedback.message}</Alert> : null}
 
+      {/* CARD INTESTAZIONE: avatar, nome, email, squadra, link al profilo pubblico. */}
       <Card variant="outlined">
         <CardContent>
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={3} alignItems="center">
@@ -209,6 +224,7 @@ export default function AccountsPage() {
         </CardContent>
       </Card>
 
+      {/* CARD DI MODIFICA DATI: form con campi nome, email, ecc. + password di conferma. */}
       <Card variant="outlined">
         <CardContent>
           <Stack direction="row" spacing={1.5} alignItems="center">
@@ -225,7 +241,7 @@ export default function AccountsPage() {
                 <TextField
                   fullWidth
                   label="Nome"
-                  onChange={(event) => setField('nome', event.target.value)}
+                  onChange={(e) => setField('nome', e.target.value)}
                   value={form.nome}
                 />
               </Grid>
@@ -233,7 +249,7 @@ export default function AccountsPage() {
                 <TextField
                   fullWidth
                   label="Cognome"
-                  onChange={(event) => setField('cognome', event.target.value)}
+                  onChange={(e) => setField('cognome', e.target.value)}
                   value={form.cognome}
                 />
               </Grid>
@@ -241,7 +257,7 @@ export default function AccountsPage() {
                 <TextField
                   fullWidth
                   label="Email"
-                  onChange={(event) => setField('email', event.target.value)}
+                  onChange={(e) => setField('email', e.target.value)}
                   type="email"
                   value={form.email}
                 />
@@ -250,7 +266,7 @@ export default function AccountsPage() {
                 <TextField
                   fullWidth
                   label="Nazionalita"
-                  onChange={(event) => setField('nazionalita', event.target.value)}
+                  onChange={(e) => setField('nazionalita', e.target.value)}
                   value={form.nazionalita}
                 />
               </Grid>
@@ -259,7 +275,7 @@ export default function AccountsPage() {
                   fullWidth
                   InputLabelProps={{ shrink: true }}
                   label="Data di nascita"
-                  onChange={(event) => setField('data_nascita', event.target.value)}
+                  onChange={(e) => setField('data_nascita', e.target.value)}
                   type="date"
                   value={form.data_nascita}
                 />
@@ -268,7 +284,7 @@ export default function AccountsPage() {
                 <TextField
                   fullWidth
                   label="Sesso"
-                  onChange={(event) => setField('sesso', event.target.value)}
+                  onChange={(e) => setField('sesso', e.target.value)}
                   select
                   value={form.sesso}
                 >
@@ -280,7 +296,7 @@ export default function AccountsPage() {
                 <TextField
                   fullWidth
                   label="Indirizzo"
-                  onChange={(event) => setField('indirizzo', event.target.value)}
+                  onChange={(e) => setField('indirizzo', e.target.value)}
                   value={form.indirizzo}
                 />
               </Grid>
@@ -288,12 +304,13 @@ export default function AccountsPage() {
                 <TextField
                   fullWidth
                   label="Conferma con la tua password"
-                  onChange={(event) => setField('password', event.target.value)}
+                  onChange={(e) => setField('password', e.target.value)}
                   type="password"
                   value={form.password}
                 />
               </Grid>
             </Grid>
+            {/* Pulsanti in basso a destra: "Elimina" (rosso) e "Salva" (blu). */}
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} justifyContent="flex-end">
               <Button
                 color="error"
@@ -316,12 +333,12 @@ export default function AccountsPage() {
         </CardContent>
       </Card>
 
+      {/* DIALOGO di conferma eliminazione: si apre cliccando "Elimina account". */}
       <Dialog onClose={() => setDeleteOpen(false)} open={deleteOpen}>
         <DialogTitle>Eliminare l account?</DialogTitle>
         <DialogContent>
           <DialogContentText>
-            Questa operazione e permanente. Verrai disconnesso e non potrai
-            recuperare i tuoi dati.
+            Questa operazione e permanente. Verrai disconnesso e non potrai recuperare i tuoi dati.
           </DialogContentText>
         </DialogContent>
         <DialogActions>

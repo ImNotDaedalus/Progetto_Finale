@@ -1,59 +1,61 @@
-// Risultati delle gare. Ogni risultato collega due squadre alla stessa gara
-// e contiene i goal segnati. Anche questo va in localStorage.
-//   id, id_gara, id_torneo, id_squadra_casa, id_squadra_ospite,
-//   gol_casa, gol_ospite
+// =============================================================================
+// resultService.js - risultati delle partite.
+//
+// Ogni risultato registra una partita giocata: chi ha giocato, quanti gol
+// hanno segnato. Anche questi sono salvati nel localStorage del browser
+// (perché il backend non ha ancora un endpoint dedicato).
+//
+// Forma di un risultato:
+//   { id, id_gara, id_torneo, id_squadra_casa, id_squadra_ospite,
+//     gol_casa, gol_ospite }
+// =============================================================================
+
 import { addItem, readList, removeItem, updateItem } from './localStore'
 
 const KEY = 'dritta_risultati'
 
 export const resultService = {
-  getRisultati() {
-    return readList(KEY)
-  },
+  // Tutti i risultati presenti.
+  getRisultati: () => readList(KEY),
 
-  getRisultatiPerSquadra(idSquadra) {
-    return readList(KEY).filter(
-      (risultato) =>
-        risultato.id_squadra_casa === idSquadra ||
-        risultato.id_squadra_ospite === idSquadra,
-    )
-  },
+  // Risultati in cui una certa squadra ha giocato (in casa o in trasferta).
+  getRisultatiPerSquadra: (idSquadra) =>
+    readList(KEY).filter(
+      (r) => r.id_squadra_casa === idSquadra || r.id_squadra_ospite === idSquadra,
+    ),
 
-  getRisultatiPerTorneo(idTorneo) {
-    return readList(KEY).filter((risultato) => risultato.id_torneo === idTorneo)
-  },
+  // Risultati di un certo torneo.
+  getRisultatiPerTorneo: (idTorneo) =>
+    readList(KEY).filter((r) => r.id_torneo === idTorneo),
 
-  createRisultato(payload) {
-    return addItem(KEY, payload)
-  },
+  // Crea un nuovo risultato.
+  createRisultato: (payload) => addItem(KEY, payload),
 
-  updateRisultato(id, changes) {
-    updateItem(KEY, id, changes)
-  },
+  // Aggiorna un risultato (es. correggere un punteggio).
+  updateRisultato: (id, changes) => updateItem(KEY, id, changes),
 
-  removeRisultato(id) {
-    removeItem(KEY, id)
-  },
+  // Rimuove un risultato.
+  removeRisultato: (id) => removeItem(KEY, id),
 }
 
-// Conta vittorie, pareggi, sconfitte di una squadra.
+/**
+ * Conta vittorie, pareggi e sconfitte di una squadra a partire da una lista
+ * di risultati. Si usa nella pagina della squadra per mostrare le statistiche.
+ */
 export function calcolaStatistiche(risultati, idSquadra) {
-  let vittorie = 0
-  let pareggi = 0
-  let sconfitte = 0
-
-  for (const risultato of risultati) {
-    const isCasa = risultato.id_squadra_casa === idSquadra
-    const isOspite = risultato.id_squadra_ospite === idSquadra
+  const stats = { vittorie: 0, pareggi: 0, sconfitte: 0 }
+  for (const r of risultati) {
+    // Stabilisce se la squadra giocava in casa o in trasferta.
+    const isCasa = r.id_squadra_casa === idSquadra
+    const isOspite = r.id_squadra_ospite === idSquadra
+    // Se la squadra non c'entra, salta.
     if (!isCasa && !isOspite) continue
-
-    const propri = isCasa ? risultato.gol_casa : risultato.gol_ospite
-    const avversari = isCasa ? risultato.gol_ospite : risultato.gol_casa
-
-    if (propri > avversari) vittorie += 1
-    else if (propri < avversari) sconfitte += 1
-    else pareggi += 1
+    // "propri" = i goal della squadra; "avversari" = i goal degli altri.
+    const propri = isCasa ? r.gol_casa : r.gol_ospite
+    const avversari = isCasa ? r.gol_ospite : r.gol_casa
+    if (propri > avversari) stats.vittorie += 1
+    else if (propri < avversari) stats.sconfitte += 1
+    else stats.pareggi += 1
   }
-
-  return { vittorie, pareggi, sconfitte }
+  return stats
 }

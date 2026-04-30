@@ -1,62 +1,56 @@
-// Funzioni per parlare con il backend riguardo agli account.
-// Ogni funzione corrisponde a una rotta del server Flask.
+// =============================================================================
+// accountService.js - funzioni per parlare col backend riguardo agli account.
+// Ogni funzione corrisponde a una rotta del server Flask (vedi account_controller.py).
+//
+// In sintesi: quando una pagina vuole "fare login", "registrare un utente" o
+// "leggere la lista degli account", chiama una di queste funzioni.
+// =============================================================================
+
 import { apiRequest } from './httpClient'
 
-const accountRoot = '/account'
+const root = '/account'  // tutte le rotte degli account iniziano con /account
 
 export const accountService = {
-  // Fa login e riceve il token JWT.
-  login(credentials) {
-    return apiRequest(`${accountRoot}/login`, { method: 'POST', body: credentials })
-  },
+  // Login: spedisce email/password e riceve indietro un token JWT.
+  login: (credentials) => apiRequest(`${root}/login`, { method: 'POST', body: credentials }),
 
-  // Registra un nuovo account.
-  register(payload) {
-    return apiRequest(`${accountRoot}/`, { method: 'POST', body: payload })
-  },
+  // Registrazione di un nuovo account.
+  register: (payload) => apiRequest(`${root}/`, { method: 'POST', body: payload }),
 
-  // Scarica la lista di tutti gli account (serve il token).
-  getAccounts(token) {
-    return apiRequest(`${accountRoot}/`, { auth: true, token })
-  },
+  // Lista di tutti gli account (richiede di essere loggato).
+  getAccounts: (token) => apiRequest(`${root}/`, { auth: true, token }),
 
-  // Scarica un singolo account tramite il suo id.
-  getAccountById(id, token) {
-    return apiRequest(`${accountRoot}/${id}`, { auth: true, token })
-  },
+  // Singolo account dato il suo id.
+  getAccountById: (id, token) => apiRequest(`${root}/${id}`, { auth: true, token }),
 
-  // Chiede al backend chi è l'utente collegato al token.
-  getProtectedSession(token) {
-    return apiRequest(`${accountRoot}/protected`, { auth: true, token })
-  },
+  // Chiede al backend chi è l'utente collegato al token (rotta "protected").
+  getProtectedSession: (token) => apiRequest(`${root}/protected`, { auth: true, token }),
 
-  // Aggiorna i dati di un account.
-  updateAccount(id, payload, token) {
-    return apiRequest(`${accountRoot}/${id}`, {
-      method: 'PUT',
-      body: payload,
-      auth: true,
-      token,
-    })
-  },
+  // Aggiorna i dati di un account (richiede di essere loggato).
+  updateAccount: (id, payload, token) =>
+    apiRequest(`${root}/${id}`, { method: 'PUT', body: payload, auth: true, token }),
 
   // Cancella un account.
-  deleteAccount(id, token) {
-    return apiRequest(`${accountRoot}/${id}`, { method: 'DELETE', auth: true, token })
-  },
+  deleteAccount: (id, token) =>
+    apiRequest(`${root}/${id}`, { method: 'DELETE', auth: true, token }),
 }
 
-// Dato un token, trova le informazioni dell'utente attualmente loggato.
+/**
+ * Dato un token JWT, recupera in un colpo solo:
+ *  - l'email dell'utente loggato
+ *  - i dati dell'account corrispondente
+ *  - la lista completa degli account (utile in altre pagine)
+ *
+ * Promise.all manda le due richieste IN PARALLELO (non una dopo l'altra),
+ * così è più veloce.
+ */
 export async function resolveAccountSession(token) {
-  const session = await accountService.getProtectedSession(token)
-  const accounts = await accountService.getAccounts(token)
-  // Cerca nella lista l'account con la stessa email della sessione.
+  const [session, accounts] = await Promise.all([
+    accountService.getProtectedSession(token),
+    accountService.getAccounts(token),
+  ])
+  // Cerca tra tutti gli account quello con la stessa email del token.
   const currentAccount =
     accounts.find((account) => account.email === session.logged_in_as) ?? null
-
-  return {
-    sessionEmail: session.logged_in_as,
-    currentAccount,
-    accounts,
-  }
+  return { sessionEmail: session.logged_in_as, currentAccount, accounts }
 }

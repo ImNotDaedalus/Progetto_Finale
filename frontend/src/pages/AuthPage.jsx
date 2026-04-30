@@ -1,5 +1,12 @@
-// Pagina di accesso: a sinistra un pannello "marketing", a destra le
-// schede Login / Registrazione.
+// =============================================================================
+// AuthPage.jsx - pagina /auth: login e registrazione.
+//
+// È divisa in due colonne:
+//   - SINISTRA (pannello blu marketing): logo + frasi e funzionalità del sito.
+//   - DESTRA (form): scheda Login oppure Registrazione, scegli con un Tab.
+//
+// Se sei già loggato vieni rimandato alla home automaticamente.
+// =============================================================================
 
 import EmojiEventsRoundedIcon from '@mui/icons-material/EmojiEventsRounded'
 import Groups2RoundedIcon from '@mui/icons-material/Groups2Rounded'
@@ -26,7 +33,9 @@ import { Navigate, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/useAuth'
 import { accountService } from '../services/accountService'
 
+// "Modulo vuoto" usato come stato iniziale del form di login.
 const emptyLoginForm = { email: '', password: '' }
+// "Modulo vuoto" della registrazione: ha tutti i campi richiesti dal backend.
 const emptyRegisterForm = {
   nome: '',
   cognome: '',
@@ -38,6 +47,7 @@ const emptyRegisterForm = {
   indirizzo: '',
 }
 
+// Le 3 "feature" mostrate nel pannello blu di sinistra (riga icona + titolo + testo).
 const FEATURES = [
   {
     icon: EmojiEventsRoundedIcon,
@@ -60,31 +70,32 @@ export default function AuthPage() {
   const navigate = useNavigate()
   const { isAuthenticated, login } = useAuth()
 
-  const [authMode, setAuthMode] = useState('login')
+  // Stato locale: quale tab è selezionata, contenuto dei due form, ecc.
+  const [authMode, setAuthMode] = useState('login')         // 'login' o 'register'
   const [loginForm, setLoginForm] = useState(emptyLoginForm)
   const [registerForm, setRegisterForm] = useState(emptyRegisterForm)
-  const [loadingAction, setLoadingAction] = useState('')
-  const [feedback, setFeedback] = useState(null)
+  const [loadingAction, setLoadingAction] = useState('')    // serve a disabilitare i pulsanti
+  const [feedback, setFeedback] = useState(null)            // messaggio di errore/successo
 
-  if (isAuthenticated) {
-    return <Navigate replace to="/home" />
-  }
+  // Se sei già loggato, ti porto alla home senza nemmeno mostrare la pagina.
+  if (isAuthenticated) return <Navigate replace to="/home" />
 
-  function updateLoginField(field, value) {
-    setLoginForm((current) => ({ ...current, [field]: value }))
-  }
+  // Funzioni di utilità per aggiornare un singolo campo dei form.
+  const updateLoginField = (field, value) =>
+    setLoginForm((c) => ({ ...c, [field]: value }))
+  const updateRegisterField = (field, value) =>
+    setRegisterForm((c) => ({ ...c, [field]: value }))
 
-  function updateRegisterField(field, value) {
-    setRegisterForm((current) => ({ ...current, [field]: value }))
-  }
-
+  // ---- LOGIN ----
   async function handleLogin(event) {
     event.preventDefault()
     setFeedback(null)
     setLoadingAction('login')
     try {
+      // login() viene dal contesto di autenticazione: chiama il backend e
+      // salva il token JWT se va a buon fine.
       await login(loginForm)
-      navigate('/home')
+      navigate('/home')                              // ti porto alla home
     } catch (error) {
       setFeedback({ severity: 'error', message: error.message })
     } finally {
@@ -92,18 +103,16 @@ export default function AuthPage() {
     }
   }
 
+  // ---- REGISTRAZIONE ----
   async function handleRegister(event) {
     event.preventDefault()
     setFeedback(null)
     setLoadingAction('register')
     try {
       await accountService.register(registerForm)
-      setFeedback({
-        severity: 'success',
-        message: 'Account creato. Effettua il login per entrare.',
-      })
+      setFeedback({ severity: 'success', message: 'Account creato. Effettua il login per entrare.' })
       setRegisterForm(emptyRegisterForm)
-      setAuthMode('login')
+      setAuthMode('login')                           // dopo la registrazione mostro la scheda Login
     } catch (error) {
       setFeedback({ severity: 'error', message: error.message })
     } finally {
@@ -112,6 +121,7 @@ export default function AuthPage() {
   }
 
   return (
+    // Sfondo a tutta pagina con gradiente blu (centra il box bianco al centro).
     <Box
       sx={{
         minHeight: '100vh',
@@ -119,10 +129,10 @@ export default function AuthPage() {
         placeItems: 'center',
         px: 2,
         py: 4,
-        background:
-          'linear-gradient(135deg, #0d3b66 0%, #1976d2 60%, #4ea3f5 100%)',
+        background: 'linear-gradient(135deg, #0d3b66 0%, #1976d2 60%, #4ea3f5 100%)',
       }}
     >
+      {/* CONTENITORE A 2 COLONNE: marketing | form. Su mobile diventa 1 colonna. */}
       <Box
         sx={{
           width: '100%',
@@ -132,6 +142,7 @@ export default function AuthPage() {
           gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' },
         }}
       >
+        {/* COLONNA SINISTRA: pannello blu di marketing. */}
         <Paper
           sx={{
             p: { xs: 3, md: 4 },
@@ -155,32 +166,25 @@ export default function AuthPage() {
             La piattaforma per organizzare la tua stagione di pallanuoto.
           </Typography>
 
+          {/* Le 3 feature, generate dal ciclo su FEATURES. */}
           <Stack spacing={2}>
-            {FEATURES.map((feature) => {
-              const Icon = feature.icon
-              return (
-                <Stack alignItems="flex-start" direction="row" key={feature.title} spacing={2}>
-                  <Avatar
-                    sx={{
-                      bgcolor: 'rgba(255,255,255,0.16)',
-                      color: '#fff',
-                    }}
-                    variant="rounded"
-                  >
-                    <Icon />
-                  </Avatar>
-                  <Box>
-                    <Typography variant="subtitle1">{feature.title}</Typography>
-                    <Typography sx={{ opacity: 0.85 }} variant="body2">
-                      {feature.text}
-                    </Typography>
-                  </Box>
-                </Stack>
-              )
-            })}
+            {FEATURES.map(({ icon: Icon, title, text }) => (
+              <Stack alignItems="flex-start" direction="row" key={title} spacing={2}>
+                <Avatar sx={{ bgcolor: 'rgba(255,255,255,0.16)', color: '#fff' }} variant="rounded">
+                  <Icon />
+                </Avatar>
+                <Box>
+                  <Typography variant="subtitle1">{title}</Typography>
+                  <Typography sx={{ opacity: 0.85 }} variant="body2">
+                    {text}
+                  </Typography>
+                </Box>
+              </Stack>
+            ))}
           </Stack>
         </Paper>
 
+        {/* COLONNA DESTRA: form di login/registrazione. */}
         <Paper sx={{ borderRadius: 4, overflow: 'hidden' }} variant="outlined">
           <Box sx={{ px: { xs: 2, sm: 3 }, pt: { xs: 2, sm: 3 } }}>
             <Typography variant="h5">
@@ -193,47 +197,41 @@ export default function AuthPage() {
             </Typography>
           </Box>
 
+          {/* TAB per scegliere tra Login e Registrazione. */}
           <Tabs
             onChange={(_, value) => setAuthMode(value)}
             sx={{ px: { xs: 1, sm: 2 }, pt: 2 }}
             value={authMode}
           >
-            <Tab
-              icon={<LoginRoundedIcon fontSize="small" />}
-              iconPosition="start"
-              label="Login"
-              value="login"
-            />
-            <Tab
-              icon={<HowToRegRoundedIcon fontSize="small" />}
-              iconPosition="start"
-              label="Registrati"
-              value="register"
-            />
+            <Tab icon={<LoginRoundedIcon fontSize="small" />} iconPosition="start" label="Login" value="login" />
+            <Tab icon={<HowToRegRoundedIcon fontSize="small" />} iconPosition="start" label="Registrati" value="register" />
           </Tabs>
 
           <Divider />
 
           <Box sx={{ p: { xs: 2, sm: 3 } }}>
+            {/* Eventuale messaggio di feedback (errore / successo) sopra al form. */}
             {feedback ? (
               <Alert severity={feedback.severity} sx={{ mb: 2 }}>
                 {feedback.message}
               </Alert>
             ) : null}
 
+            {/* IN BASE alla tab attiva mostriamo il form di login o quello di registrazione. */}
             {authMode === 'login' ? (
+              // ---- FORM LOGIN ----
               <Stack component="form" onSubmit={handleLogin} spacing={2}>
                 <TextField
                   fullWidth
                   label="Email"
-                  onChange={(event) => updateLoginField('email', event.target.value)}
+                  onChange={(e) => updateLoginField('email', e.target.value)}
                   type="email"
                   value={loginForm.email}
                 />
                 <TextField
                   fullWidth
                   label="Password"
-                  onChange={(event) => updateLoginField('password', event.target.value)}
+                  onChange={(e) => updateLoginField('password', e.target.value)}
                   type="password"
                   value={loginForm.password}
                 />
@@ -248,7 +246,9 @@ export default function AuthPage() {
                 </Button>
               </Stack>
             ) : (
+              // ---- FORM REGISTRAZIONE ----
               <Stack component="form" onSubmit={handleRegister} spacing={2}>
+                {/* Griglia a 2 colonne (1 sola su schermi piccoli) per i campi. */}
                 <Box
                   sx={{
                     display: 'grid',
@@ -258,50 +258,48 @@ export default function AuthPage() {
                 >
                   <TextField
                     label="Nome"
-                    onChange={(event) => updateRegisterField('nome', event.target.value)}
+                    onChange={(e) => updateRegisterField('nome', e.target.value)}
                     required
                     value={registerForm.nome}
                   />
                   <TextField
                     label="Cognome"
-                    onChange={(event) => updateRegisterField('cognome', event.target.value)}
+                    onChange={(e) => updateRegisterField('cognome', e.target.value)}
                     required
                     value={registerForm.cognome}
                   />
                   <TextField
                     label="Email"
-                    onChange={(event) => updateRegisterField('email', event.target.value)}
+                    onChange={(e) => updateRegisterField('email', e.target.value)}
                     required
-                    sx={{ gridColumn: { sm: '1 / -1' } }}
+                    sx={{ gridColumn: { sm: '1 / -1' } }}     // l'email occupa entrambe le colonne
                     type="email"
                     value={registerForm.email}
                   />
                   <TextField
                     label="Password"
-                    onChange={(event) => updateRegisterField('password', event.target.value)}
+                    onChange={(e) => updateRegisterField('password', e.target.value)}
                     required
                     type="password"
                     value={registerForm.password}
                   />
                   <TextField
                     label="Nazionalita"
-                    onChange={(event) => updateRegisterField('nazionalita', event.target.value)}
+                    onChange={(e) => updateRegisterField('nazionalita', e.target.value)}
                     required
                     value={registerForm.nazionalita}
                   />
                   <TextField
                     InputLabelProps={{ shrink: true }}
                     label="Data di nascita"
-                    onChange={(event) =>
-                      updateRegisterField('data_nascita', event.target.value)
-                    }
+                    onChange={(e) => updateRegisterField('data_nascita', e.target.value)}
                     required
                     type="date"
                     value={registerForm.data_nascita}
                   />
                   <TextField
                     label="Sesso"
-                    onChange={(event) => updateRegisterField('sesso', event.target.value)}
+                    onChange={(e) => updateRegisterField('sesso', e.target.value)}
                     required
                     select
                     value={registerForm.sesso}
@@ -311,7 +309,7 @@ export default function AuthPage() {
                   </TextField>
                   <TextField
                     label="Indirizzo"
-                    onChange={(event) => updateRegisterField('indirizzo', event.target.value)}
+                    onChange={(e) => updateRegisterField('indirizzo', e.target.value)}
                     required
                     sx={{ gridColumn: { sm: '1 / -1' } }}
                     value={registerForm.indirizzo}

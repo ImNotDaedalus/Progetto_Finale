@@ -1,8 +1,18 @@
+# =============================================================================
+# ECCEZIONI PERSONALIZZATE
+#
+# Cos'è un'eccezione? È un "errore con un nome", una specie di cartellino
+# rosso che il programma può alzare quando qualcosa va storto. Avere
+# eccezioni "personalizzate" significa avere cartellini di colori diversi
+# per problemi diversi: così, chi le riceve, capisce subito cosa è andato
+# male e come reagire (es. "squadra non trovata" è diverso da "errore database").
+# =============================================================================
 
-class DBException(Exception):  # errore generico del database
+
+class DBException(Exception):  # errore generico del database (es. la tabella non risponde)
     pass
 
-class TeamAlreadyExistsException(Exception):  # team già presente
+class TeamAlreadyExistsException(Exception):  # il team che si vuole creare esiste già
     pass
 
 class SquadraAlreadyExistsException(Exception):  # squadra già presente
